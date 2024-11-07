@@ -3,9 +3,35 @@ use rand::thread_rng;
 use std::io::{self, Write};
 
 // --- Model ---
+trait Model<T> {
+    fn get_data(&self) -> &T;
+    fn set_data(&mut self, data: T);
+}
+
+// --- View ---
+trait View<T> {
+    fn draw(&self, model: &T) -> String;
+}
+
+// --- Controller ---
+trait Controller<T> {
+    fn run(&mut self) -> bool; // Return bool indicating whether to continue
+}
+
+// --- Card and Deck Models ---
 struct Card {
     rank: u8,
     suit: &'static str,
+}
+
+impl Model<Card> for Card {
+    fn get_data(&self) -> &Card {
+        self
+    }
+
+    fn set_data(&mut self, data: Card) {
+        *self = data;
+    }
 }
 
 struct Deck {
@@ -36,6 +62,17 @@ impl Deck {
     }
 }
 
+impl Model<Vec<Card>> for Deck {
+    fn get_data(&self) -> &Vec<Card> {
+        &self.cards
+    }
+
+    fn set_data(&mut self, data: Vec<Card>) {
+        self.cards = data;
+    }
+}
+
+// --- Hand Model ---
 struct Hand {
     cards: Vec<Card>,
 }
@@ -72,80 +109,90 @@ impl Hand {
         total
     }
 
-    fn display(&self, viewer: &dyn CardView) {
-        let output = self
-            .cards
-            .iter()
-            .map(|card| viewer.draw(card))
-            .collect::<Vec<String>>()
-            .join(", ");
-
+    fn display(&self, viewer: &dyn View<Hand>) {
+        let output = viewer.draw(self);
         println!("Hand: {}", output);
     }
 }
 
-// --- View ---
-trait CardView {
-    fn draw(&self, card: &Card) -> String;
+impl Model<Vec<Card>> for Hand {
+    fn get_data(&self) -> &Vec<Card> {
+        &self.cards
+    }
+
+    fn set_data(&mut self, data: Vec<Card>) {
+        self.cards = data;
+    }
 }
 
+// --- View Implementations ---
 struct CardAlphaViewer;
 struct CardGlyphViewer;
 
-impl CardView for CardAlphaViewer {
-    fn draw(&self, card: &Card) -> String {
-        let rank = match card.rank {
-            1 => "Ace".to_string(),
-            11 => "Jack".to_string(),
-            12 => "Queen".to_string(),
-            13 => "King".to_string(),
-            _ => card.rank.to_string(),
-        };
-        format!("{} of {}", rank, card.suit)
+impl View<Hand> for CardAlphaViewer {
+    fn draw(&self, model: &Hand) -> String {
+        model
+            .get_data()
+            .iter()
+            .map(|card| {
+                let rank = match card.rank {
+                    1 => "Ace".to_string(),
+                    11 => "Jack".to_string(),
+                    12 => "Queen".to_string(),
+                    13 => "King".to_string(),
+                    _ => card.rank.to_string(),
+                };
+                format!("{} of {}", rank, card.suit)
+            })
+            .collect::<Vec<String>>()
+            .join(", ")
     }
 }
 
-impl CardView for CardGlyphViewer {
-    fn draw(&self, card: &Card) -> String {
-        let rank = match card.rank {
-            1 => "A".to_string(),
-            11 => "J".to_string(),
-            12 => "Q".to_string(),
-            13 => "K".to_string(),
-            _ => card.rank.to_string(),
-        };
+impl View<Hand> for CardGlyphViewer {
+    fn draw(&self, model: &Hand) -> String {
+        model
+            .get_data()
+            .iter()
+            .map(|card| {
+                let rank = match card.rank {
+                    1 => "A".to_string(),
+                    11 => "J".to_string(),
+                    12 => "Q".to_string(),
+                    13 => "K".to_string(),
+                    _ => card.rank.to_string(),
+                };
 
-        let glyph = match card.suit {
-            "Hearts" => "♥",
-            "Diamonds" => "♦",
-            "Spades" => "♠",
-            "Clubs" => "♣",
-            _ => "?",
-        };
+                let glyph = match card.suit {
+                    "Hearts" => "♥",
+                    "Diamonds" => "♦",
+                    "Spades" => "♠",
+                    "Clubs" => "♣",
+                    _ => "?",
+                };
 
-        format!("{} of {}", rank, glyph)
+                format!("{} of {}", rank, glyph)
+            })
+            .collect::<Vec<String>>()
+            .join(", ")
     }
 }
 
-// --- Controller ---
-trait GameController {
-    fn run(&mut self) -> bool; // Run the game loop, handling all logic
-}
-
-struct Controller {
+// --- Game Controller ---
+struct GameController {
     deck: Deck,
     player_hand: Hand,
     dealer_hand: Hand,
-    viewer: Box<dyn CardView>,
+    viewer: Box<dyn View<Hand>>,
 }
 
-impl Controller {
-    fn new(viewer: Box<dyn CardView>) -> Self {
-        Controller {
+impl GameController {
+    fn new(viewer: Box<dyn View<Hand>>) -> Self {
+        GameController {
             deck: Deck::new(),
             player_hand: Hand::new(),
             dealer_hand: Hand::new(),
-            viewer: viewer,
+            viewer,
         }
     }
 
@@ -238,26 +285,28 @@ impl Controller {
     }
 }
 
-impl GameController for Controller {
+impl Controller<Hand> for GameController {
     fn run(&mut self) -> bool {
         self.play_game();
-        Controller::play_again()
+        GameController::play_again() // Return the result of play_again
     }
 }
 
 fn main() {
     let is_glyph_view = true; // Toggle this to switch between glyph and alpha viewer
 
-    let viewer: Box<dyn CardView> = if is_glyph_view {
+    let viewer: Box<dyn View<Hand>> = if is_glyph_view {
         Box::new(CardGlyphViewer)
     } else {
         Box::new(CardAlphaViewer)
     };
 
-    let mut controller = Controller::new(viewer);
+    let mut controller = GameController::new(viewer);
 
     loop {
+        let mut hand = Hand::new(); // Create the hand model
         if !controller.run() {
+            // If play_again returns false, break the loop
             break;
         }
     }
